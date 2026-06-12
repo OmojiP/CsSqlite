@@ -135,92 +135,15 @@ public sealed unsafe class SqliteConnection(string path) : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public int ExecuteNonQuery(ReadOnlySpan<byte> utf8CommandText)
     {
-        ThrowIfDisposed();
-        Open();
-
-        var stmts = PrepareAll(utf8CommandText);
-        var count = 0;
-        try
-        {
-            for (var i = 0; i < stmts.Count; i++)
-            {
-                try
-                {
-                    count += ExecutePreparedNonQuery((sqlite3_stmt*)stmts.Buffer[i]);
-                }
-                finally
-                {
-                    stmts.Buffer[i] = IntPtr.Zero;
-                }
-            }
-        }
-        finally
-        {
-            FinalizeAndReturn(stmts.Buffer, stmts.Count);
-        }
-
-        return count;
+        using var command = CreateCommand(utf8CommandText);
+        return command.ExecuteNonQuery();
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public int ExecuteNonQuery(ReadOnlySpan<char> commandText)
     {
-        ThrowIfDisposed();
-        Open();
-
-        var stmts = PrepareAll(commandText);
-        var count = 0;
-        try
-        {
-            for (var i = 0; i < stmts.Count; i++)
-            {
-                try
-                {
-                    count += ExecutePreparedNonQuery((sqlite3_stmt*)stmts.Buffer[i]);
-                }
-                finally
-                {
-                    stmts.Buffer[i] = IntPtr.Zero;
-                }
-            }
-        }
-        finally
-        {
-            FinalizeAndReturn(stmts.Buffer, stmts.Count);
-        }
-
-        return count;
-    }
-
-    int ExecutePreparedNonQuery(sqlite3_stmt* stmt)
-    {
-        try
-        {
-            var count = 0;
-            while (true)
-            {
-                var code = sqlite3_step(stmt);
-                switch (code)
-                {
-                    case Constants.SQLITE_DONE:
-                        return count;
-                    case Constants.SQLITE_ROW:
-                        count++;
-                        break;
-                    case Constants.SQLITE_ERROR:
-                        var errmsg = sqlite3_errmsg(db);
-                        throw new SqliteException(code, Marshal.PtrToStringAnsi((nint)errmsg));
-                    case Constants.SQLITE_MISUSE:
-                        throw new SqliteException(code, "Invalid SQL statement");
-                    default:
-                        throw new SqliteException(code, "Could not execute SQL statement.");
-                }
-            }
-        }
-        finally
-        {
-            sqlite3_finalize(stmt);
-        }
+        using var command = CreateCommand(commandText);
+        return command.ExecuteNonQuery();
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
