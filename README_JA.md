@@ -136,6 +136,40 @@ command.Parameters.Add("$foo", "foo");
 command.ExecuteNonQuery();
 ```
 
+## バッチ処理
+
+CsSqliteはMicrosoft.Data.Sqliteと同様のバッチ処理をサポートしています。
+
+```cs
+using var connection = new SqliteConnection("example.db");
+connection.Open();
+
+connection.ExecuteNonQuery("""
+CREATE TABLE a (id INTEGER);
+CREATE TABLE b (id INTEGER);
+INSERT INTO a VALUES (1);
+INSERT INTO a VALUES (2);
+""");
+
+using var reader = connection.ExecuteReader("""
+SELECT 1;
+SELECT 2;
+""");
+
+while (reader.Read())
+{
+    Console.WriteLine(reader.GetInt(0)); // 1
+}
+
+if (reader.NextResult())
+{
+    while (reader.Read())
+    {
+        Console.WriteLine(reader.GetInt(0)); // 2
+    }
+}
+```
+
 ## 例外処理
 
 実行中に何らかのエラーが発生した場合は`SqliteException`をスローします。これをcatchすることで例外処理が可能です。

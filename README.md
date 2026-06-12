@@ -136,6 +136,40 @@ command.Parameters.Add("$foo", "foo");
 command.ExecuteNonQuery();
 ```
 
+## Batching
+
+CsSqlite supports batch processing similar to Microsoft.Data.Sqlite.
+
+```cs
+using var connection = new SqliteConnection("example.db");
+connection.Open();
+
+connection.ExecuteNonQuery("""
+CREATE TABLE a (id INTEGER);
+CREATE TABLE b (id INTEGER);
+INSERT INTO a VALUES (1);
+INSERT INTO a VALUES (2);
+""");
+
+using var reader = connection.ExecuteReader("""
+SELECT 1;
+SELECT 2;
+""");
+
+while (reader.Read())
+{
+    Console.WriteLine(reader.GetInt(0)); // 1
+}
+
+if (reader.NextResult())
+{
+    while (reader.Read())
+    {
+        Console.WriteLine(reader.GetInt(0)); // 2
+    }
+}
+```
+
 ## Exception Handling
 
 If any error occurs during execution, a `SqliteException` is thrown. You can handle exceptions by catching this.
