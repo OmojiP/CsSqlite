@@ -7,4 +7,7 @@
     <Project Path="src/CsSqlite.Native/CsSqlite.Native.csproj" />
     <Project Path="src/CsSqlite/CsSqlite.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CsSqlite.Tests/CsSqlite.Tests.csproj" />
+  </Folder>
 </Solution>

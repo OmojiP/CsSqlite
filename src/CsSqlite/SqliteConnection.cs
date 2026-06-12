@@ -1,7 +1,5 @@
-using System.Buffers;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Text;
 using static CsSqlite.NativeMethods;
 
 namespace CsSqlite;
@@ -25,25 +23,16 @@ public unsafe sealed class SqliteConnection(string path) : IDisposable
         ThrowIfDisposed();
         if (state == State.Open) return;
 
-        var buffer = ArrayPool<byte>.Shared.Rent(path.Length * 3);
-        try
+        // PooledUtf8String is NUL-terminated, which sqlite3_open requires as a C string.
+        using var utf8Path = new PooledUtf8String(path);
+        fixed (byte* fileNamePtr = utf8Path.AsSpan())
+        fixed (sqlite3** p = &db)
         {
-            var bytesWritten = Encoding.UTF8.GetBytes(path, buffer);
-            var fileName = buffer.AsSpan(0, bytesWritten);
-
-            fixed (byte* fileNamePtr = fileName)
-            fixed (sqlite3** p = &db)
+            var code = sqlite3_open(fileNamePtr, p);
+            if (code != Constants.SQLITE_OK)
             {
-                var code = sqlite3_open(fileNamePtr, p);
-                if (code != Constants.SQLITE_OK)
-                {
-                    throw new SqliteException(code, "Could not open database file: " + path);
-                }
+                throw new SqliteException(code, "Could not open database file: " + path);
             }
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(buffer);
         }
 
         state = State.Open;
