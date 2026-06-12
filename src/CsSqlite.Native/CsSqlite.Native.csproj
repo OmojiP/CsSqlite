@@ -27,4 +27,11 @@
     <EmbeddedResource Include="..\..\LICENSE" />
   </ItemGroup>
 
+  <!-- Copy Constants.cs to Unity project -->
+  <Target Name="CopyConstantsToUnity" AfterTargets="AfterBuild"
+    Condition="'$(TargetFramework)' == 'netstandard2.1'">
+    <Copy SourceFiles="$(ProjectDir)\Constants.cs"
+      DestinationFolder="$(ProjectDir)\..\CsSqlite.Unity\Assets\CsSqlite.Unity\Native\" />
+  </Target>
+
 </Project>
