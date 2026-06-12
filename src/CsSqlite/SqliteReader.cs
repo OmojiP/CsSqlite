@@ -6,8 +6,29 @@ using static CsSqlite.NativeMethods;
 namespace CsSqlite;
 
 [StructLayout(LayoutKind.Auto)]
-public unsafe readonly struct SqliteReader(SqliteConnection connection, sqlite3_stmt* stmt, bool finalizeStatement) : IDisposable
+public unsafe struct SqliteReader : IDisposable
 {
+    readonly SqliteConnection connection;
+    readonly PreparedStatements statements;
+    readonly bool finalizeStatements;
+    readonly bool returnStatements;
+    int stmtIndex;
+    sqlite3_stmt* stmt;
+
+    internal SqliteReader(
+        SqliteConnection connection,
+        PreparedStatements statements,
+        bool finalizeStatements,
+        bool returnStatements)
+    {
+        this.connection = connection;
+        this.statements = statements;
+        this.finalizeStatements = finalizeStatements;
+        this.returnStatements = returnStatements;
+        stmtIndex = 0;
+        stmt = null;
+    }
+
     public int ColumnCount
     {
         get
@@ -20,6 +41,7 @@ public unsafe readonly struct SqliteReader(SqliteConnection connection, sqlite3_
     public bool Read()
     {
         connection.ThrowIfDisposed();
+        if (stmt == null) return false;
 
         var code = sqlite3_step(stmt);
         switch (code)
@@ -38,6 +60,46 @@ public unsafe readonly struct SqliteReader(SqliteConnection connection, sqlite3_
             default:
                 return false;
         }
+    }
+
+    public bool NextResult()
+    {
+        connection.ThrowIfDisposed();
+
+        while (stmtIndex < statements.Count)
+        {
+            stmt = (sqlite3_stmt*)statements.Buffer[stmtIndex++];
+            if (sqlite3_column_count(stmt) > 0)
+            {
+                return true;
+            }
+
+            while (true)
+            {
+                var code = sqlite3_step(stmt);
+                switch (code)
+                {
+                    case Constants.SQLITE_DONE:
+                        goto NextStatement;
+                    case Constants.SQLITE_ROW:
+                        break;
+                    case Constants.SQLITE_ERROR:
+                        var msg = sqlite3_errmsg(connection.db);
+                        var message = Marshal.PtrToStringAnsi((nint)msg);
+                        throw new SqliteException(Constants.SQLITE_ERROR, message);
+                    case Constants.SQLITE_MISUSE:
+                        throw new SqliteException(Constants.SQLITE_MISUSE, "Invalid SQL statement");
+                    default:
+                        throw new SqliteException(code, "Could not execute SQL statement.");
+                }
+            }
+
+        NextStatement:
+            continue;
+        }
+
+        stmt = null;
+        return false;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -175,13 +237,30 @@ public unsafe readonly struct SqliteReader(SqliteConnection connection, sqlite3_
     {
         if (connection.IsDisposed) return;
 
-        if (finalizeStatement)
+        if (finalizeStatements)
         {
-            sqlite3_finalize(stmt);
+            for (var i = 0; i < statements.Count; i++)
+            {
+                if (statements.Buffer[i] == IntPtr.Zero) continue;
+
+                sqlite3_finalize((sqlite3_stmt*)statements.Buffer[i]);
+                statements.Buffer[i] = IntPtr.Zero;
+            }
         }
         else
         {
-            sqlite3_reset(stmt);
+            for (var i = 0; i < statements.Count; i++)
+            {
+                if (statements.Buffer[i] != IntPtr.Zero)
+                {
+                    sqlite3_reset((sqlite3_stmt*)statements.Buffer[i]);
+                }
+            }
+        }
+
+        if (returnStatements)
+        {
+            ArrayPool<IntPtr>.Shared.Return(statements.Buffer, clearArray: true);
         }
     }
 }
