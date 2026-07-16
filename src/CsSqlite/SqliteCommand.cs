@@ -44,8 +44,6 @@ public readonly unsafe struct SqliteCommand : IDisposable
 
     public void Dispose()
     {
-        connection.ThrowIfDisposed();
-
         try
         {
             for (var i = 0; i < statements.Count; i++)
@@ -55,11 +53,10 @@ public readonly unsafe struct SqliteCommand : IDisposable
 
                 var stmt = (sqlite3_stmt*)statements.Buffer[i];
                 statements.Buffer[i] = IntPtr.Zero;
-                var code = sqlite3_finalize(stmt);
-                if (code != Constants.SQLITE_OK)
-                {
-                    throw new SqliteException(code, "Could not finalize SQL statement.");
-                }
+                // sqlite3_finalize reports the most recent evaluation error of the
+                // statement, not a failure to finalize; never throw from Dispose or
+                // the remaining statements would leak and mask the original exception.
+                sqlite3_finalize(stmt);
             }
         }
         finally

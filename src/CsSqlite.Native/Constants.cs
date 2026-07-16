@@ -7,6 +7,12 @@ namespace CsSqlite
         public const int SQLITE_OK = 0;
         public const int SQLITE_ERROR = 1;
         public const int SQLITE_MISUSE = 21;
+
+        public const int SQLITE_OPEN_READONLY = 0x00000001;
+        public const int SQLITE_OPEN_READWRITE = 0x00000002;
+        public const int SQLITE_OPEN_CREATE = 0x00000004;
+        public const int SQLITE_OPEN_NOMUTEX = 0x00008000;
+        public const int SQLITE_OPEN_FULLMUTEX = 0x00010000;
         public const int SQLITE_ROW = 100;
         public const int SQLITE_DONE = 101;
         public const int SQLITE_INTEGER = 1;

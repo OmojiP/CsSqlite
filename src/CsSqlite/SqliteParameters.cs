@@ -5,6 +5,11 @@ namespace CsSqlite;
 
 public readonly unsafe ref struct SqliteParameters
 {
+    // sqlite3_bind_* のデストラクタ引数。IL2CPP は関数ポインタ型引数の DllImport を
+    // マーシャリングできないため IntPtr 版 (NativeMethods.*_intptr) を使う。
+    static readonly IntPtr StaticDestructor = IntPtr.Zero;      // SQLITE_STATIC
+    static readonly IntPtr TransientDestructor = (IntPtr)(-1); // SQLITE_TRANSIENT
+
     readonly SqliteConnection connection;
     readonly sqlite3_stmt* stmt;
 
@@ -207,9 +212,18 @@ string value)
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     void BindText(int index, ReadOnlySpan<byte> utf8Text, bool isStatic)
     {
+        // `fixed` over an empty span yields a null pointer, which sqlite3_bind_text
+        // treats as binding NULL instead of an empty string.
+        if (utf8Text.IsEmpty)
+        {
+            byte dummy = 0;
+            HandleErrorCode(sqlite3_bind_text_intptr(stmt, index, &dummy, 0, TransientDestructor));
+            return;
+        }
+
         fixed (byte* ptr = utf8Text)
         {
-            var code = sqlite3_bind_text(stmt, index, ptr, utf8Text.Length, isStatic ? Constants.SQLITE_STATIC : Constants.SQLITE_TRANSIENT);
+            var code = sqlite3_bind_text_intptr(stmt, index, ptr, utf8Text.Length, isStatic ? StaticDestructor : TransientDestructor);
             HandleErrorCode(code);
         }
     }
@@ -217,9 +231,16 @@ string value)
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     void BindText(int index, ReadOnlySpan<char> text, bool isStatic)
     {
+        if (text.IsEmpty)
+        {
+            char dummy = '\0';
+            HandleErrorCode(sqlite3_bind_text16_intptr(stmt, index, &dummy, 0, TransientDestructor));
+            return;
+        }
+
         fixed (char* ptr = text)
         {
-            var code = sqlite3_bind_text16(stmt, index, ptr, text.Length * 2, isStatic ? Constants.SQLITE_STATIC : Constants.SQLITE_TRANSIENT);
+            var code = sqlite3_bind_text16_intptr(stmt, index, ptr, text.Length * 2, isStatic ? StaticDestructor : TransientDestructor);
             HandleErrorCode(code);
         }
     }
@@ -227,9 +248,16 @@ string value)
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     void BindBlob(int index, ReadOnlySpan<byte> blob)
     {
+        if (blob.IsEmpty)
+        {
+            byte dummy = 0;
+            HandleErrorCode(sqlite3_bind_blob_intptr(stmt, index, &dummy, 0, TransientDestructor));
+            return;
+        }
+
         fixed (byte* ptr = blob)
         {
-            var code = sqlite3_bind_blob(stmt, index, ptr, blob.Length, Constants.SQLITE_TRANSIENT);
+            var code = sqlite3_bind_blob_intptr(stmt, index, ptr, blob.Length, TransientDestructor);
             HandleErrorCode(code);
         }
     }

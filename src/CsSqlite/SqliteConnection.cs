@@ -25,14 +25,25 @@ public sealed unsafe class SqliteConnection(string path) : IDisposable
         if (state == State.Open)
             return;
 
-        // PooledUtf8String is NUL-terminated, which sqlite3_open requires as a C string.
+        // PooledUtf8String is NUL-terminated, which sqlite3_open_v2 requires as a C string.
         using var utf8Path = new PooledUtf8String(path);
         fixed (byte* fileNamePtr = utf8Path.AsSpan())
         fixed (sqlite3** p = &db)
         {
-            var code = sqlite3_open(fileNamePtr, p);
+            // SQLITE_OPEN_FULLMUTEX: builds compiled with SQLITE_THREADSAFE=2 (e.g. the official
+            // sqlite-android binaries) have no per-connection mutex by default, so sharing a
+            // connection across threads corrupts memory. Opening in serialized mode makes the
+            // connection safe regardless of how the native library was compiled.
+            const int flags = Constants.SQLITE_OPEN_READWRITE | Constants.SQLITE_OPEN_CREATE | Constants.SQLITE_OPEN_FULLMUTEX;
+            var code = sqlite3_open_v2(fileNamePtr, p, flags, null);
             if (code != Constants.SQLITE_OK)
             {
+                // sqlite3_open_v2 may allocate a handle even on failure; release it.
+                if (db != null)
+                {
+                    sqlite3_close_v2(db);
+                    db = null;
+                }
                 throw new SqliteException(code, "Could not open database file: " + path);
             }
         }
@@ -74,8 +85,7 @@ public sealed unsafe class SqliteConnection(string path) : IDisposable
                 var code = sqlite3_prepare_v2(db, current, remaining, &stmt, &tail);
                 if (code != Constants.SQLITE_OK)
                 {
-                    var errmsg = sqlite3_errmsg(db);
-                    var message = Marshal.PtrToStringAnsi((nint)errmsg);
+                    var message = GetErrorMessage(db);
                     FinalizeAndReturn(stmts, count);
                     throw new SqliteException(code, message);
                 }
@@ -112,9 +122,9 @@ public sealed unsafe class SqliteConnection(string path) : IDisposable
                 var code = sqlite3_prepare16_v2(db, current, remainingBytes, &stmt, &tailPtr);
                 if (code != Constants.SQLITE_OK)
                 {
-                    var errmsg = sqlite3_errmsg(db);
+                    var message = GetErrorMessage(db);
                     FinalizeAndReturn(stmts, count);
-                    throw new SqliteException(code, Marshal.PtrToStringAnsi(new IntPtr(errmsg)));
+                    throw new SqliteException(code, message);
                 }
 
                 if (stmt != null)
@@ -192,6 +202,13 @@ public sealed unsafe class SqliteConnection(string path) : IDisposable
         ArrayPool<IntPtr>.Shared.Return(statements, clearArray: true);
     }
 
+    // The buffer returned by sqlite3_errmsg is owned by SQLite and must NOT be freed.
+    internal static string? GetErrorMessage(sqlite3* db)
+    {
+        var errmsg = sqlite3_errmsg(db);
+        return Marshal.PtrToStringUTF8((nint)errmsg);
+    }
+
     internal void ThrowIfDisposed()
     {
         if (IsDisposed)
@@ -202,11 +219,11 @@ public sealed unsafe class SqliteConnection(string path) : IDisposable
 
     public void Dispose()
     {
-        ThrowIfDisposed();
-
         if (state == State.Open)
         {
-            sqlite3_close(db);
+            // sqlite3_close_v2 succeeds even with unfinalized statements
+            // (the connection becomes a zombie until the last statement is finalized).
+            sqlite3_close_v2(db);
             db = null;
         }
 

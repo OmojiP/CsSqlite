@@ -50,15 +50,11 @@ public unsafe struct SqliteReader : IDisposable
                 return false;
             case Constants.SQLITE_ROW:
                 return true;
-            case Constants.SQLITE_ERROR:
-                var msg = sqlite3_errmsg(connection.db);
-                var message = Marshal.PtrToStringAnsi((nint)msg);
-                sqlite3_free(msg);
-                throw new SqliteException(Constants.SQLITE_ERROR, message);
             case Constants.SQLITE_MISUSE:
                 throw new SqliteException(Constants.SQLITE_MISUSE, "Invalid SQL statement");
             default:
-                return false;
+                // Any other code (SQLITE_ERROR, SQLITE_CONSTRAINT, SQLITE_CORRUPT, ...) is an error.
+                throw new SqliteException(code, SqliteConnection.GetErrorMessage(connection.db));
         }
     }
 
@@ -83,14 +79,10 @@ public unsafe struct SqliteReader : IDisposable
                         goto NextStatement;
                     case Constants.SQLITE_ROW:
                         break;
-                    case Constants.SQLITE_ERROR:
-                        var msg = sqlite3_errmsg(connection.db);
-                        var message = Marshal.PtrToStringAnsi((nint)msg);
-                        throw new SqliteException(Constants.SQLITE_ERROR, message);
                     case Constants.SQLITE_MISUSE:
                         throw new SqliteException(Constants.SQLITE_MISUSE, "Invalid SQL statement");
                     default:
-                        throw new SqliteException(code, "Could not execute SQL statement.");
+                        throw new SqliteException(code, SqliteConnection.GetErrorMessage(connection.db));
                 }
             }
 
